@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Simulador de Seguro</title>
+  <style>
+    body { font-family: sans-serif; padding: 2rem; background: #f9f9f9; text-align: center; }
+    button { padding: 1rem 2rem; font-size: 1.2rem; background: #007bff; color: white; border: none; border-radius: 10px; cursor: pointer; }
+    audio { margin-top: 2rem; width: 100%; max-width: 400px; }
+  </style>
+</head>
+<body>
+  <h1>🎙️ Simulador de Seguro</h1>
+  <p>Clique para falar com o cliente IA</p>
+  <button onclick="startRecording()">🎤 Falar</button>
+  <audio id="responseAudio" controls></audio>
+
+  <script>
+    const API_BASE = "https://simulador-seguro.railway.internal";
+    let mediaRecorder, audioChunks = [];
+
+    async function startRecording() {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+      mediaRecorder.start();
+
+      audioChunks = [];
+      mediaRecorder.addEventListener("dataavailable", event => {
+        audioChunks.push(event.data);
+      });
+
+      mediaRecorder.addEventListener("stop", async () => {
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        const formData = new FormData();
+        formData.append('audio', audioBlob, 'recording.webm');
+
+        try {
+          const transcribeRes = await fetch(`${API_BASE}/transcribe`, { method: 'POST', body: formData });
+          const { transcription } = await transcribeRes.json();
+
+          const gptRes = await fetch(`${API_BASE}/gpt`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: transcription })
+          });
+          const { reply } = await gptRes.json();
+
+          const ttsRes = await fetch(`${API_BASE}/tts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: reply })
+          });
+
+          const audioBlob = await ttsRes.blob();
+          const audioUrl = URL.createObjectURL(audioBlob);
+          const audioPlayer = document.getElementById('responseAudio');
+          audioPlayer.src = audioUrl;
+          audioPlayer.play();
+        } catch (err) {
+          console.error("Erro no processo:", err);
+          alert("Ocorreu um erro. Verifique o console.");
+        }
+      });
+
+      setTimeout(() => {
+        mediaRecorder.stop();
+      }, 5000); // Grava por 5 segundos
+    }
+  </script>
+</body>
+</html>
