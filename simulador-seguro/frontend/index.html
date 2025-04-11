@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Simulador de Seguro</title>
+  <style>
+    body { font-family: sans-serif; padding: 2rem; background: #f9f9f9; text-align: center; }
+    button { padding: 1rem 2rem; font-size: 1.2rem; background: #007bff; color: white; border: none; border-radius: 10px; cursor: pointer; }
+    audio { margin-top: 2rem; width: 100%; max-width: 400px; }
+  </style>
+</head>
+<body>
+  <h1>🎙️ Simulador de Seguro</h1>
+  <p>Clique para falar com o cliente IA</p>
+  <button onclick="startRecording()">🎤 Falar</button>
+  <audio id="responseAudio" controls></audio>
+
+  <script>
+    let mediaRecorder, audioChunks = [];
+
+    async function startRecording() {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+      mediaRecorder.start();
+
+      audioChunks = [];
+      mediaRecorder.addEventListener("dataavailable", event => {
+        audioChunks.push(event.data);
+      });
+
+      mediaRecorder.addEventListener("stop", async () => {
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        const formData = new FormData();
+        formData.append('audio', audioBlob, 'recording.webm');
+
+        // 1. Transcrever áudio
+        const transcribeRes = await fetch('/transcribe', { method: 'POST', body: formData });
+        const { transcription } = await transcribeRes.json();
+
+        // 2. Mandar para o GPT
+        const gptRes = await fetch('/gpt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: transcription })
+        });
+        const { reply } = await gptRes.json();
+
+        // 3. Transformar resposta em áudio
+        const ttsRes = await fetch('/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: reply })
+        });
+        const { audio_url } = await ttsRes.json();
+
+        // 4. Tocar resposta
+        const audioPlayer = document.getElementById('responseAudio');
+        audioPlayer.src = audio_url;
+        audioPlayer.play();
+      });
+
+      setTimeout(() => {
+        mediaRecorder.stop();
+      }, 5000); // Grava 5 segundos
+    }
+  </script>
+</body>
+</html>
